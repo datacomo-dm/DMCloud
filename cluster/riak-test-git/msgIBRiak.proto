@@ -1,0 +1,19 @@
+message msgRCAttr_packN {
+  required bytes head = 1;
+  optional bytes nulls = 2;
+  optional bytes data = 3;
+};
+
+message msgRCAttr_packS {
+  required uint32 no_obj = 1;
+  required uint32 no_nulls = 2;
+  required uint32 optimal_mode = 3;
+  required uint32 decomposer_id = 4;
+  required uint32 no_groups = 5;
+  required uint32 data_full_byte_size = 6;
+  required uint32 ver = 7;
+
+  optional bytes nulls = 100;
+  optional bytes lens = 101;
+  optional bytes data = 102;
+};

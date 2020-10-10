@@ -1,0 +1,59 @@
+message msgCRError {
+        required bytes errmsg   = 1;
+        required uint32 errcode = 2;
+	optional double errtime = 100;
+};
+
+message msgCRErrorList {
+	repeated msgCRError err_list = 10;
+};
+
+message msgCRPair {
+	required bytes key = 1;
+	optional bytes value = 2;
+	optional int64 obj_id = 100;
+};
+
+message msgCRPairList {
+	repeated msgCRPair pair_list = 10;
+	optional int64 min_obj_id = 20;
+	optional int64 max_obj_id = 30;
+	optional bool done = 100;
+};
+
+message msgCRMeta {
+	optional int64 obj_id = 10;
+	optional double timestamp = 20;
+	optional bytes verify = 30;
+	optional msgCRPair user_meta = 40;
+};
+
+enum CR_ValueType {
+	CR_VT_STRING	= 1;
+	CR_VT_INT64	= 2;
+	CR_VT_UINT64	= 3;
+	CR_VT_FLOAT64	= 4;
+};
+
+message msgCRValueStore {
+	optional CR_ValueType value_type = 10;
+	optional bytes value_str = 20;
+	optional int64 value_int = 21;
+	optional uint64 value_uint = 22;
+	optional double value_float = 23;
+};
+
+message msgCRRowTable {
+	message Row {
+		repeated msgCRValueStore columns = 10;
+		optional bytes primary_key = 20;
+		optional msgCRMeta meta_data = 30;
+	};
+
+	optional int64 first_no = 10;
+	repeated bytes column_names = 20;
+	repeated CR_ValueType column_types = 30;
+	repeated Row rows = 40;
+	optional msgCRMeta meta_data = 50;
+	optional bool done = 100;
+};

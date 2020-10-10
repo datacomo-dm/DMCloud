@@ -1,0 +1,443 @@
+#!/bin/sh -
+_my=riak-remote
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+SHELL=/bin/sh
+
+RIAK_PROXY_PORT=8086
+RIAK_PB_PORT=8087
+RIAK_HTTP_PORT=8098
+RIAK_HANDOFF_PORT=8099
+
+RIAK_TOOLBOX="./riak-toolbox"
+
+if [ -f /usr/local/include/cr_class/cr_shellfuncs.h ]; then
+    . /usr/local/include/cr_class/cr_shellfuncs.h
+else
+    if [ -f ./cr_shellfuncs.h ]; then
+        mkdir -p /usr/local/include/cr_class/ > /dev/null 2>&1
+        cp -f ./cr_shellfuncs.h /usr/local/include/cr_class/cr_shellfuncs.h > /dev/null 2>&1
+        . ./cr_shellfuncs.h
+    fi
+fi
+
+#Usage: _help_exit [exit_code]
+_help_exit()
+{
+    local status
+
+    echo "Usage: $_my -h"
+    echo "       $_my -C install -f riak_package_file_name"
+    echo "            -N <username_prefix><instance_number>@dns_node_name:/absolute/path/to/"
+    echo "            [-r add_to_ring_node_name] [-p riak_proxy_proc]"
+    echo "            [-V vnode_count] [-M memcache_per_vnode] [-T memcache_expire_second]"
+    echo "       $_my -C upgrade -N <username_prefix><instance_number>@dns_node_name"
+    echo "            [-f riak_package_file_name] [-p riak_proxy_proc]"
+    echo "       $_my -C delete -N <username_prefix><instance_number>@dns_node_name"
+    echo "       $_my -C control -N <username_prefix><instance_number>@dns_node_name"
+    echo "            -c <command> <args>"
+    echo "Supported control commands:"
+    echo "            stop, start, restart, reboot, proxy-stop, proxy-start, proxy-restart"
+    echo "            getpid, version, ping, test, diag, status, vnode-status"
+    echo "            cluster, ring-status, member-status, transfers, du, df, find"
+    echo "WARNING: 1. dns_node_name MUST be a REALLY DNS name, or a accessable IP address"
+    echo "            hostname in /etc/hosts is USELESS"
+    [ "0${1}" -ne "0" ] > /dev/null 2>&1
+    status=${?}
+    if [ "A${status}" != "A0" -a "A${status}" != "A1" ]; then
+        exit 0
+    fi
+    exit ${1}
+}
+
+if [ $# -eq 0 ]; then
+    _help_exit 0
+fi
+
+_do_act=none
+
+__remote_host="localhost"
+__remote_port=22
+__remote_user=""
+__alt_remote_user=""
+__remote_userid=0
+
+_script_target="none"
+
+_hostname="localhost"
+_filename=""
+_basedir=""
+_instnum=1
+_userprefix="riak"
+
+_ring_nodename=""
+_can_add_user=0
+_proxy_file=""
+_default_vnode_count=16
+_memcache_per_vnode=32
+_memcache_expire_second=3600
+
+_control_cmd=""
+_control_arg=""
+
+for param in "$@" ; do
+    if [ "A${_control_cmd}" != "A" ]; then
+        echo "${param}" | grep '[&;<>|]' > /dev/null 2>&1
+        if [ "A${?}" != "A0" ]; then
+            _control_arg="${_control_arg} ${param}"
+        fi
+        continue
+    fi
+
+    case "${param}" in
+    -h)
+        _help_exit 0
+        ;;
+    -C)
+        _do_act=scripttarget
+        ;;
+    -c)
+        _do_act=controlcmd
+        ;;
+    -f)
+        _do_act=filename
+        ;;
+    -N)
+        _do_act=idn
+        ;;
+    -p)
+        _do_act=proxyproc
+        ;;
+    -r)
+        _do_act=addtoring
+        ;;
+    -V)
+        _do_act=default_vnode_count
+        ;;
+    -M)
+        _do_act=memcache_per_vnode
+        ;;
+    -T)
+        _do_act=memcache_expire_second
+        ;;
+    -*)
+        _do_act=none
+        ;;
+    *)
+        case "$_do_act" in
+        scripttarget)
+            _script_target="${param}"
+            ;;
+        filename)
+            _filename="${param}"
+            ;;
+        controlcmd)
+            _control_cmd="${param}"
+            ;;
+        idn)
+            __remote_host=`_IDN_get_hostname "${param}"`
+
+            __remote_userid=`_execr id -u`
+            if [ "A${__remote_userid}" != "A0" ]; then
+                echo "Cannot get root permission from ${__remote_host}"
+                exit 1
+            fi
+
+            __alt_remote_user=`_IDN_get_username "${param}"`
+            __remote_user="${__alt_remote_user}"
+
+            _userprefix=`_IDN_get_userprefix "${param}"`
+            _instnum=`_IDN_get_instance "${param}"`
+
+            _basedir=`_IDN_get_rpath "${param}"`
+            ;;
+        addtoring)
+            _ring_nodename="${param}"
+            ;;
+        proxyproc)
+            _proxy_file="${param}"
+            ;;
+        default_vnode_count)
+            _default_vnode_count=`_ranged_number "${param}" 16 1024`
+            ;;
+        memcache_per_vnode)
+            _memcache_per_vnode=`_ranged_number "${param}" 16 4096`
+            ;;
+        memcache_expire_second)
+            _memcache_expire_second=`_ranged_number "${param}" 60 86400`
+            ;;
+        *)
+            ;;
+        esac
+        ;;
+    esac
+done
+
+user_name="${__alt_remote_user}"
+abs_path="/${_basedir}/${user_name}"
+
+proxy_port=`expr "${_instnum}" "*" "100" "+" "${RIAK_PROXY_PORT}"`
+pb_port=`expr "${_instnum}" "*" "100" "+" "${RIAK_PB_PORT}"`
+http_port=`expr "${_instnum}" "*" "100" "+" "${RIAK_HTTP_PORT}"`
+handoff_port=`expr "${_instnum}" "*" "100" "+" "${RIAK_HANDOFF_PORT}"`
+
+case "${_script_target}" in
+    install)
+        __remote_user=""
+
+        echo "STEP: make instance"
+        _execr groupadd -f "${_userprefix}"
+        _execr useradd -d "${abs_path}" -s /bin/bash "${user_name}"
+        _execr chmod -R 750 "${abs_path}"
+
+        _execr rm -rf "/tmp/${abs_path}"
+        _execr mkdir -p "/tmp/${abs_path}"
+        _execr chmod -R 1777 "/tmp/${abs_path}"
+
+        __remote_user="${__alt_remote_user}"
+
+        echo "STEP: copy and extract release file to instance"
+        _copyr "${_filename}" "${abs_path}/"
+        bname=`basename "${_filename}"`
+        _execr tar -C "${abs_path}" -xzf "${abs_path}/${bname}"
+        _execr rm -f "${abs_path}/${bname}"
+
+        echo "STEP: update instance config file"
+        app_config_tmp=`mktemp`
+        scp -P "${__remote_port}" "${__remote_host}:${abs_path}/riak/etc/app.config" "${app_config_tmp}" > /dev/null
+        status=${?}
+        if [ "A${status}" != "A0" ]; then
+            echo "ERROR: scp -P '${__remote_port}' '${__remote_host}:${abs_path}/riak/etc/app.config' '${app_config_tmp}'"
+            exit ${status}
+        fi
+
+        vm_args_tmp=`mktemp`
+        scp -P "${__remote_port}" "${__remote_host}:${abs_path}/riak/etc/vm.args" "${vm_args_tmp}" > /dev/null
+        status=${?}
+        if [ "A${status}" != "A0" ]; then
+            echo "ERROR: scp -P '${__remote_port}' '${__remote_host}:${abs_path}/riak/etc/vm.args' '${vm_args_tmp}'"
+            exit ${status}
+        fi
+
+        cat "${app_config_tmp}"                                                         \
+          | sed "s/ring_creation_size, 64/ring_creation_size, ${_default_vnode_count}/" \
+          | sed "s/max_memory, 16/max_memory, ${_memcache_per_vnode}/"                  \
+          | sed "s/ttl, 3600/ttl, ${_memcache_expire_second}/"                          \
+          | sed "s/\"127.0.0.1\", 8087/\"127.0.0.1\", ${pb_port}/"                      \
+          | sed "s/\"127.0.0.1\", 8098/\"127.0.0.1\", ${http_port}/"                    \
+          | sed "s/handoff_port, 8099/handoff_port, ${handoff_port}/"                   \
+          > "${app_config_tmp}.new"
+
+        cat "${vm_args_tmp}"                                                            \
+          | sed "s/-name riak@127.0.0.1/-name ${user_name}@${__remote_host}/"           \
+          > "${vm_args_tmp}.new"
+
+        _copyr "${app_config_tmp}.new" "${abs_path}/riak/etc/app.config"
+        _copyr "${vm_args_tmp}.new" "${abs_path}/riak/etc/vm.args"
+
+        rm -f "${app_config_tmp}" "${app_config_tmp}.new" "${vm_args_tmp}" "${vm_args_tmp}.new"
+
+        if [ "A${_proxy_file}" != "A" ]; then
+            echo "STEP: merge riak-proxy to instance"
+            _proxy_basename=`basename "${_proxy_file}"`
+            _proxy_savename="${abs_path}/riak/bin/riak-proxy"
+            if [ "A${_proxy_file}" = "A${_proxy_basename}" ]; then
+                _copyr "${_proxy_file}" "${_proxy_savename}"
+            else
+                _execr ln -sf "${_proxy_file}" "${_proxy_savename}"
+            fi
+
+            riak_runner_tmp=`mktemp`
+
+            echo "STEP: update instance startup script"
+            scp -P "${__remote_port}" "${__remote_host}:${abs_path}/riak/bin/riak" "${riak_runner_tmp}" > /dev/null
+            status=${?}
+            if [ "A${status}" != "A0" ]; then
+                echo "ERROR: scp -P '${__remote_port}' '${__remote_host}:${abs_path}/riak/bin/riak' '${riak_runner_tmp}'"
+                exit ${status}
+            fi
+            cat "${riak_runner_tmp}"                                            \
+              | sed "s:PROXY_PROG=\"\":PROXY_PROG=\"${_proxy_savename}\":"      \
+              | sed "s/PROXY_LISTEN_PORT=8086/PROXY_LISTEN_PORT=${proxy_port}/" \
+              | sed "s/PROXY_SERVER_PORT=8087/PROXY_SERVER_PORT=${pb_port}/"    \
+              > "${riak_runner_tmp}.new"
+
+            _copyr "${riak_runner_tmp}.new" "${abs_path}/riak/bin/riak"
+            _execr chmod 755 "${abs_path}/riak/bin/riak"
+
+            rm -f "${riak_runner_tmp}" "${riak_runner_tmp}.new"
+        fi
+
+        _execr '~/riak/bin/riak' start
+
+        if [ "A${_ring_nodename}" != "A" -a "A${user_name}@${__remote_host}" != "A${_ring_nodename}" ]; then
+            echo "STEP: node join cluster"
+            _execr '~/riak/bin/riak-admin' cluster join "${_ring_nodename}"
+
+            # regist node info to cluster's storage
+            master_hostname=`_IDN_get_hostname "${_ring_nodename}"`
+            master_instance=`_IDN_get_instance "${_ring_nodename}"`
+            master_pb_port=`expr "${master_instance}" "*" "100" "+" "${RIAK_PROXY_PORT}"`
+
+            regist_pb_port="${pb_port}"
+            if [ "A${_proxy_file}" != "A" ]; then
+                regist_pb_port="${proxy_port}"
+            fi
+
+            if [ -x "${RIAK_TOOLBOX}" ]; then
+                export RIAK_HOSTNAME="${master_hostname}"
+                export RIAK_PORT="${master_pb_port}"
+
+                ${RIAK_TOOLBOX} addnode "${user_name}@${__remote_host}" "${__remote_host}" "${regist_pb_port}"
+            else
+                echo "Cannot find '${RIAK_TOOLBOX}' prog, you MUST run next line manually:"
+                echo -n "    RIAK_HOSTNAME=\"${master_hostname}\" RIAK_PORT=\"${master_pb_port}\""
+                echo " ${RIAK_TOOLBOX} addnode \"${user_name}@${__remote_host}\" \"${__remote_host}\" \"${regist_pb_port}\""
+                echo ""
+            fi
+        fi
+
+        echo "${user_name}@${__remote_host} install OK"
+
+        if [ "A${_ring_nodename}" != "A" -a "A${user_name}@${__remote_host}" != "A${_ring_nodename}" ]; then
+            echo "After ALL node in same cluster created OK, you must run next 2 lines to enable them:"
+            echo "    $_my -C control -N ${user_name}@${__remote_host} -c cluster plan"
+            echo "    $_my -C control -N ${user_name}@${__remote_host} -c cluster commit"
+            echo ""
+        fi
+
+        ;;
+    upgrade)
+        if [ "A${_filename}" != "A" -a -f "${_filename}" ]; then
+            echo "STEP: stop node"
+            _execr '~/riak/bin/riak' stop
+            _execr pkill -9 riak-proxy 2> /dev/null
+
+            echo "STEP: save old data path and config file"
+            tmp_dir="~/tmp.`date '+%Y%m%d%H%M%S'`"
+            _execr mkdir -p "${tmp_dir}/bin" "${tmp_dir}/etc"
+            _execr cp -P '~/riak/bin/riak' '~/riak/bin/riak-proxy' "${tmp_dir}/bin/"
+            _execr cp -P '~/riak/etc/app.config' '~/riak/etc/vm.args' '~/riak/etc/cert.pem' \
+              '~/riak/etc/key.pem' "${tmp_dir}/etc/"
+            _execr mv '~/riak/data' '~/riak/log' "${tmp_dir}/"
+
+            echo "STEP: copy and extract release file to instance"
+            _copyr "${_filename}" "~/"
+            bname=`basename "${_filename}"`
+            _execr tar -C "~" -xzf "~/${bname}"
+            _execr rm -f "~/${bname}"
+
+            echo "STEP: restore old data path and config file"
+            _execr rm -rf '~/riak/data' '~/riak/log'
+            _execr mv "${tmp_dir}/data" "${tmp_dir}/log" '~/riak/'
+            _execr cp -fP "${tmp_dir}/etc/app.config" "${tmp_dir}/etc/vm.args" \
+              "${tmp_dir}/etc/cert.pem" "${tmp_dir}/etc/key.pem" '~/riak/etc/'
+            _execr cp -fP "${tmp_dir}/bin/riak" "${tmp_dir}/bin/riak-proxy" '~/riak/bin/'
+            _execr rm -rf "${tmp_dir}"
+
+            echo "STEP: start node"
+            _execr '~/riak/bin/riak' start
+        fi
+
+        if [ "A${_proxy_file}" != "A" ]; then
+            echo "STEP: stop riak-proxy"
+            _execr pkill -9 riak-proxy 2> /dev/null
+
+            echo "STEP: upgrade riak-proxy"
+            _proxy_basename=`basename "${_proxy_file}"`
+            _proxy_savename="~/riak/bin/riak-proxy"
+            if [ "A${_proxy_file}" = "A${_proxy_basename}" ]; then
+                _copyr "${_proxy_file}" "${_proxy_savename}"
+            else
+                _execr ln -sf "${_proxy_file}" "${_proxy_savename}"
+            fi
+
+            riak_runner_tmp=`mktemp`
+            riak_runner_tmp_remote=`_execr mktemp`
+
+            echo "STEP: update instance startup script"
+            _execr cp '~/riak/bin/riak' "${riak_runner_tmp_remote}"
+            scp -P "${__remote_port}" "${__remote_host}:${riak_runner_tmp_remote}" "${riak_runner_tmp}" > /dev/null
+            status=${?}
+            if [ "A${status}" != "A0" ]; then
+                echo "ERROR: scp -P '${__remote_port}' '${__remote_host}:${riak_runner_tmp_remote}' '${riak_runner_tmp}'"
+                exit ${status}
+            fi
+
+            _execr rm -f "${riak_runner_tmp_remote}"
+
+            cat "${riak_runner_tmp}"                                            \
+              | sed "s:PROXY_PROG=\"\":PROXY_PROG=\"${_proxy_savename}\":"      \
+              | sed "s/PROXY_LISTEN_PORT=8086/PROXY_LISTEN_PORT=${proxy_port}/" \
+              | sed "s/PROXY_SERVER_PORT=8087/PROXY_SERVER_PORT=${pb_port}/"    \
+              > "${riak_runner_tmp}.new"
+
+            _copyr "${riak_runner_tmp}.new" "~/riak/bin/riak"
+            _execr chmod 755 "~/riak/bin/riak"
+
+            rm -f "${riak_runner_tmp}" "${riak_runner_tmp}.new"
+
+            echo "STEP: start riak-proxy"
+            _execr '~/riak/bin/riak' proxy-restart
+        fi
+
+        echo "${user_name}@${__remote_host} upgrade OK"
+
+        ;;
+    delete)
+        echo "WARNING: Delete command is experimental, It may cause data loss or other serious problems."
+        echo "WARNING: continue delete, please type YES"
+        read delete_answer
+
+        if [ "A${delete_answer}" = "AYES" ]; then
+            echo "STEP: stop node"
+            _execr kill -9 -1 2> /dev/null
+
+            echo "STEP: delete node"
+            __remote_user=""
+            _execr userdel -r "${__alt_remote_user}"
+            __remote_user="${__alt_remote_user}"
+
+            echo "${user_name}@${__remote_host} delete OK"
+        else
+            echo "Abandon"
+        fi
+
+        ;;
+    control)
+        case "${_control_cmd}" in
+            stop|start|restart|reboot|proxy-restart|getpid|version|ping)
+                _execr '~/riak/bin/riak' "${_control_cmd}"
+                ;;
+            proxy-stop)
+                _execr pkill -9 riak-proxy 2> /dev/null
+                ;;
+            proxy-start|proxy-restart)
+                _execr '~/riak/bin/riak' proxy-restart
+                ;;
+            test|diag|status|vnode-status|ring-status|member-status|transfers)
+                _execr '~/riak/bin/riak-admin' "${_control_cmd}"
+                ;;
+            cluster)
+                _execr '~/riak/bin/riak-admin' "${_control_cmd}" "${_control_arg}"
+                ;;
+            find)
+               	_execr "${_control_cmd}" "${_control_arg}"
+                ;;
+            du)
+                _execr du -sb '~' | cut -f 1
+                ;;
+            df)
+               	_execr df -h '~'
+                ;;
+            *)
+                _help_exit 22
+                ;;
+        esac
+        ;;
+    *)
+        _help_exit 22
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,14 @@
+LFLAGS= -ldpiosh -lm -lrt -lpthread -lstdc++
+LDFLAGS= -m64 -L$(DATAMERGER_HOME)/lib
+INCLUDE= -I$(DMASRC_PATH)/inc
+SOURCE=dbcp_sample.cc 
+OBJS=dbcp_sample.o
+CXX = gcc
+FLAGS = -m64 -g -pthread -DUSE_WDBI 
+dbcp_sample: $(OBJS) 
+	$(CXX) $(LDFLAGS) $(OBJS) -o $@  $(LFLAGS) 
+	cp $@ $(DATAMERGER_HOME)/bin/$@
+$(OBJS): $(SOURCE) 
+	$(CXX) $(CFLAGS) $(INCLUDE) -c $(SOURCE) 
+clean: 
+	rm -f $(OBJS) dbcp_sample

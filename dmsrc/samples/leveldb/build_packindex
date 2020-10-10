@@ -1,0 +1,5 @@
+gcc -std=c++0x -g -D_232526_1_290358 dma_packindex.cpp -o dma_packindex_232526_1_290358 -I/usr/local/include/ -lstdc++ -lcr_class
+gcc -std=c++0x -g -D_232526_2_289089 dma_packindex.cpp -o dma_packindex_232526_2_289089 -I/usr/local/include/ -lstdc++ -lcr_class
+gcc -std=c++0x -g -D_232526_3_286620 dma_packindex.cpp -o dma_packindex_232526_3_286620 -I/usr/local/include/ -lstdc++ -lcr_class
+gcc -std=c++0x -g -D_232526_4_287822 dma_packindex.cpp -o dma_packindex_232526_4_287822 -I/usr/local/include/ -lstdc++ -lcr_class
+gcc -std=c++0x -g  dma_packindex.cpp -o dma_packindex_dma1686 -I/usr/local/include/ -lstdc++ -lcr_class

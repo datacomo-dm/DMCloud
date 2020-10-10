@@ -1,0 +1,29 @@
+enum RiakAsyncCmdCode {
+	RIAK_ASYNC_NOP		= 0;
+	RIAK_ASYNC_PUT		= 1;
+	RIAK_ASYNC_DEL		= 2;
+	RIAK_ASYNC_GET		= 3;
+};
+
+message msgRiakAsyncReq {
+	required RiakAsyncCmdCode cmdcode = 10;
+	required bytes bucket = 20;
+	required bytes key = 30;
+	optional int64 queryid = 35;
+	optional double timestamp = 36;
+	optional bytes value = 40;
+	optional bytes queryparams = 50;
+	optional bytes callback_ptr = 60;
+	optional bytes callback_tag_data = 61;
+};
+
+message msgRiakAsyncResp {
+	required RiakAsyncCmdCode cmdcode = 10;
+	required bytes bucket = 20;
+	required bytes key = 30;
+	optional int64 intret = 32;
+	optional int64 queryid = 35;
+	optional bytes value = 40;
+	optional int64 value_stored_size = 41;
+	optional bytes queryparams = 50;
+};

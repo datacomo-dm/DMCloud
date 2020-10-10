@@ -1,0 +1,78 @@
+#!/bin/sh
+
+MAKE=gmake
+
+cd "`dirname ${0}`"
+
+_cur_path="`pwd`"
+_cur_ver="`cat ${_cur_path}/CURRENT`"
+
+if [ ! -d "${_cur_path}/${_cur_ver}" ]; then
+    echo -n "make version path..."
+    mkdir -p "${_cur_path}/${_cur_ver}"
+    _status=${?}
+    if [ "A${_status}" != "A0" ]; then
+        echo "failed"
+        exit ${_status}
+    else
+        echo "ok"
+    fi
+fi
+
+if [ ! -d "${_cur_path}/${_cur_ver}/riak-${_cur_ver}" ]; then
+    echo -n "unpack distfile..."
+    tar -C "${_cur_path}/${_cur_ver}" -xzf "${_cur_path}/distfile/riak-${_cur_ver}.tar.gz"
+    _status=${?}
+    if [ "A${_status}" != "A0" ]; then
+        echo "failed"
+        rm -rf "${_cur_path}/${_cur_ver}/riak-${_cur_ver}"
+        exit ${_status}
+    else
+        echo "ok"
+    fi
+
+    echo -n "apply patch file..."
+    cd "${_cur_path}/${_cur_ver}/riak-${_cur_ver}"
+    for i in `ls ../../patchfile/${_cur_ver}/*`; do
+        echo -n " `basename ${i}`"
+        patch -p1 < ${i}
+    done
+    _status=${?}
+    if [ "A${_status}" != "A0" ]; then
+        echo "failed"
+        exit ${_status}
+    else
+        echo "ok"
+    fi
+fi
+
+echo "make release"
+rm -rf "${_cur_path}/${_cur_ver}/riak-${_cur_ver}/rel/riak"
+cd "${_cur_path}/${_cur_ver}/riak-${_cur_ver}" && ${MAKE} rel
+_status=${?}
+if [ "A${_status}" != "A0" ]; then
+    echo "make release failed"
+    exit ${_status}
+else
+    echo "make release ok"
+fi
+
+echo -n "build release package..."
+_rel_path="${_cur_path}/${_cur_ver}/riak-rel-`date +%Y%m%d%H%M%S`"
+rm -rf "${_rel_path}"
+mkdir -p "${_rel_path}"
+tar -C "${_cur_path}/${_cur_ver}/riak-${_cur_ver}/rel" -czf "${_rel_path}/riak-rel.tar.gz" riak/
+_status=${?}
+if [ "A${_status}" != "A0" ]; then
+    echo "failed"
+    rm -rf "${_rel_path}"
+    exit ${_status}
+fi
+cp -PR ${_cur_path}/packagefile/${_cur_ver}/* "${_rel_path}/"
+_rel_pathfile="${_cur_path}/riak-${_cur_ver}-`date +%Y%m%d%H%M%S`-rel.tar"
+tar -C "`dirname ${_rel_path}`" -cf "${_rel_pathfile}" `basename ${_rel_path}`
+echo "ok"
+
+rm -rf "${_rel_path}"
+
+echo "all done, output file is ${_rel_pathfile}"

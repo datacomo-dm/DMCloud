@@ -1,0 +1,3 @@
+#!/bin/sh -
+find -name "libbrighthouse.a"|xargs rm
+./make_do release community 4

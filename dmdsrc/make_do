@@ -1,0 +1,29 @@
+if [ "A${1}" = "A-h" ] ; then
+    echo "Usage: ${0} [debug|release] [community|cluster] [job_count]"
+    exit 0
+fi
+
+if [ "A${1}" = "Arelease" ] ; then
+    export _mode=release
+else
+    export _mode=debug
+fi
+
+if [ "A${2}" = "Acluster" ] ; then
+    export _edition=cluster
+else
+    export _edition=community
+fi
+
+if [ "A${3}" = "A" ] ; then
+    _job_count=`cat /proc/cpuinfo | grep '^processor' | wc -l`
+    _job_count=`expr ${_job_count} '/' 2`
+else
+    _job_count="${3}"
+fi
+
+if [ "${_job_count}" -lt "1" ] ; then
+    _job_count=1
+fi
+
+EDITION=${_edition} VERBOSE=yes gmake ${_mode} -j${_job_count}

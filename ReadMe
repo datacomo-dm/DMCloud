@@ -1,0 +1,3 @@
+dmsrc						:	DMCloud client
+dmdsrc + vender :	DMCloud server
+cluster					: DMCloud common lib

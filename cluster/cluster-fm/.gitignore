@@ -1,0 +1,8 @@
+*.o
+*.a
+.depend
+*.pb.cc
+*.pb.h
+system
+cluster_fm
+*.out

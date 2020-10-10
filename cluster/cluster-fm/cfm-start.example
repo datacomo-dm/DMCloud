@@ -1,0 +1,19 @@
+#!/bin/sh -
+
+_cur_date=`date '+%Y%m%d%H%M%S'`
+
+pkill -9 cluster_fm
+
+rm -f /tmp/CFM-*.sock
+
+for i in ${CFM_NODE_PATHS}; do
+    rm -rf ${i}/CFM-*-*-*
+done
+
+_id='0'
+for i in ${CFM_NODE_PATHS}; do
+    _port=`expr 10000 '+' ${_id}`
+    nohup /usr/local/bin/cluster_fm cfm "${CFM_CLUSTER_STR}" "tcp://${CFM_LOCAL_ADDRESS}:${_port}" /usr/local/lib/ ${i} > /var/log/cluster_fm/${_cur_date}-${_port} 2>&1 &
+    ln -sf ${_cur_date}-${_port} /var/log/cluster_fm/CURRENT-${_port}
+    _id=`expr ${_id} '+' 1`
+done

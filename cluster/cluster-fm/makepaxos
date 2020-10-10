@@ -1,0 +1,10 @@
+#!/bin/sh -
+_cur_pwd="$PWD"
+tar xzf libpaxos.tar.gz
+cd libpaxos/build
+#git pull
+cmake ..
+make
+cd "${_cur_pwd}"
+ln -sf ./libpaxos/build/evpaxos/libevpaxos.so .
+

@@ -1,0 +1,85 @@
+//
+// no CFMMsgExchange message
+// CFMMsgExchange data format:
+// +---------------------+--------------------------+-----------------------+
+// | job_id_len(uint8_t) | job_id(job_id_len bytes) | data(other all bytes) |
+// +---------------------+--------------------------+-----------------------+
+//
+
+message CFMJobStartReq {
+	required bytes lib_info		= 1;
+	optional bytes extra_param	= 2;
+	optional bool static_work_path	= 3;
+};
+
+//
+// no CFMJobStartResp message
+//
+
+message CFMJobDataReq {
+	required bytes data_req		= 1;
+	required int64 rowid_left	= 2;
+	required int64 rowid_right	= 3;
+};
+
+//
+// no CFMJobDataResp message
+//
+
+message CFMJobKVPutReq {
+	required bytes key		= 1;
+	optional bytes value		= 2;
+	optional bool if_none_match	= 3;
+};
+
+//
+// no CFMJobKVPutResp message
+//
+
+message CFMJobKVGetReq {
+	required bytes key		= 1;
+	required double timeout_sec	= 2;	// wait timeout if key does not exist
+};
+
+//
+// CFMJobKVGetResp 's value is in CFMMsgExchange.data()
+//
+
+message CFMLockReq {
+	required bytes lock_name	= 1;
+	required bytes lock_value	= 2;
+	required bytes lock_pass	= 3;
+	required double lock_timeout	= 4;
+	required double wait_timeout	= 5;
+};
+
+//
+// CFMLockResp is msgCRError
+//
+
+message CFMUnlockReq {
+	required bytes lock_name	= 1;
+	required bytes lock_pass	= 2;
+};
+
+//
+// CFMUnlockResp is msgCRError
+//
+
+enum CFMIDCmdType {
+	CFM_ID_ALLOC		= 1;
+	CFM_ID_FREE		= 2;
+	CFM_ID_SOLIDIFY		= 3;
+};
+
+message CFMIDReq {
+	required CFMIDCmdType cmd_code		= 1;
+	required bytes id_name			= 2;
+	optional uint64 alloc_count		= 3;
+	optional double autofree_timeout	= 4;
+	repeated int64 id_list			= 5;
+};
+
+message CFMIDResp {
+	repeated int64 id_list		= 1;
+};
